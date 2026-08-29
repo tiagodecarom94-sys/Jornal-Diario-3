@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil, Calendar as CalendarIcon } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from "recharts";
 
 // ---- palette ----
@@ -54,6 +54,8 @@ export default function TradingJournal() {
   const [selectedDay, setSelectedDay] = useState(todayStr());
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ date: todayStr(), tipo: "ganho", valor: "" });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [saveError, setSaveError] = useState(false);
 
   // ---- load from localStorage ----
@@ -188,10 +190,15 @@ export default function TradingJournal() {
       setSelectedMonthKey(monthKeyOf(form.date));
     }
     setForm({ date: form.date, tipo: "ganho", valor: "" });
+    setShowDatePicker(false);
     setShowForm(false);
   }
   function removeTrade(id) {
     persistTrades(trades.filter(t => t.id !== id));
+  }
+  function clearMonth() {
+    persistTrades(trades.filter(t => monthKeyOf(t.date) !== selectedMonthKey));
+    setShowClearConfirm(false);
   }
 
   if (!loaded) {
@@ -216,7 +223,7 @@ export default function TradingJournal() {
     : selectedYear;
 
   return (
-    <div style={{ background: C.bg, color: C.text, minHeight: "100vh" }} className="font-sans px-4 py-5 sm:px-6 sm:py-6 max-w-2xl mx-auto">
+    <div style={{ background: C.bg, color: C.text, minHeight: "100vh" }} className="font-sans px-4 py-5 sm:px-8 sm:py-6 max-w-2xl lg:max-w-6xl mx-auto">
       {/* header */}
       <div className="flex items-baseline justify-between mb-5">
         <div>
@@ -224,7 +231,7 @@ export default function TradingJournal() {
           <h1 style={{ color: C.text }} className="text-xl font-semibold mt-0.5">Meu Trading</h1>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { setShowDatePicker(false); setShowForm(true); }}
           style={{ background: C.gain, color: "#04120c" }}
           className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg active:opacity-80"
         >
@@ -232,6 +239,8 @@ export default function TradingJournal() {
         </button>
       </div>
 
+      <div className="lg:grid lg:grid-cols-[1.5fr_1fr] lg:gap-6 lg:items-start">
+      <div>
       {/* balance card */}
       <div style={{ background: C.surface, border: `1px solid ${C.border}` }} className="rounded-2xl p-5 mb-4">
         <div style={{ color: C.muted }} className="text-xs mb-1">
@@ -382,9 +391,21 @@ export default function TradingJournal() {
         </div>
       </div>
 
+      </div>
+
+      <div>
       {/* operations list */}
       <div style={{ color: C.muted }} className="text-xs uppercase tracking-wide mb-2 flex items-center justify-between">
         <span>Operações — {monthLabel(selectedMonthKey)}</span>
+        {tradesInMonth.length > 0 && (
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            style={{ color: C.loss }}
+            className="flex items-center gap-1 text-[11px] normal-case tracking-normal hover:opacity-80"
+          >
+            <Trash2 size={11} /> Limpar mês
+          </button>
+        )}
       </div>
       <div className="space-y-1.5">
         {tradesInMonth.length === 0 && (
@@ -418,6 +439,8 @@ export default function TradingJournal() {
           </div>
         ))}
       </div>
+      </div>
+      </div>
 
       {saveError && (
         <div style={{ color: C.loss }} className="text-xs mt-4 text-center">
@@ -427,7 +450,7 @@ export default function TradingJournal() {
 
       {/* add trade modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.7)" }} onClick={() => setShowForm(false)}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background: "rgba(0,0,0,0.7)" }} onClick={() => { setShowDatePicker(false); setShowForm(false); }}>
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={addTrade}
@@ -436,18 +459,29 @@ export default function TradingJournal() {
           >
             <div className="flex items-center justify-between mb-4">
               <div style={{ color: C.text }} className="font-medium">Nova operação</div>
-              <button type="button" onClick={() => setShowForm(false)} style={{ color: C.faint }}><X size={18} /></button>
+              <button type="button" onClick={() => { setShowDatePicker(false); setShowForm(false); }} style={{ color: C.faint }}><X size={18} /></button>
             </div>
 
             <label style={{ color: C.muted }} className="text-xs block mb-1">Data</label>
-            <input
-              type="date"
-              value={form.date}
-              max={todayStr()}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-              style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text, colorScheme: "dark" }}
-              className="w-full rounded-lg px-3 py-2 text-sm mb-3"
-            />
+            <button
+              type="button"
+              onClick={() => setShowDatePicker(s => !s)}
+              style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text }}
+              className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm mb-2"
+            >
+              <span className="capitalize">
+                {parseDateLocal(form.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
+              </span>
+              <CalendarIcon size={15} color={C.faint} />
+            </button>
+            {showDatePicker && (
+              <div className="mb-3">
+                <CalendarPicker
+                  value={form.date}
+                  onChange={(d) => { setForm({ ...form, date: d }); setShowDatePicker(false); }}
+                />
+              </div>
+            )}
 
             <label style={{ color: C.muted }} className="text-xs block mb-1">Resultado</label>
             <div className="flex gap-2 mb-3">
@@ -501,6 +535,38 @@ export default function TradingJournal() {
           </form>
         </div>
       )}
+
+      {/* clear month confirmation */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }} onClick={() => setShowClearConfirm(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: C.surface, border: `1px solid ${C.border}` }}
+            className="w-full sm:max-w-sm rounded-2xl p-5"
+          >
+            <div style={{ color: C.text }} className="font-medium mb-2">Limpar {monthLabel(selectedMonthKey)}?</div>
+            <div style={{ color: C.muted }} className="text-sm mb-5">
+              Isso apaga as {tradesInMonth.length} operações desse mês. Não dá pra desfazer.
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                style={{ background: C.surfaceRaised, color: C.text, border: `1px solid ${C.border}` }}
+                className="flex-1 rounded-lg py-2 text-sm font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={clearMonth}
+                style={{ background: C.loss, color: "#1c0705" }}
+                className="flex-1 rounded-lg py-2 text-sm font-semibold"
+              >
+                Apagar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -510,6 +576,87 @@ function StatCard({ label, value, accent }) {
     <div style={{ background: "#121316", border: "1px solid #232529" }} className="rounded-xl px-3 py-3">
       <div style={{ color: "#8d8f96" }} className="text-[10px] uppercase tracking-wide mb-1">{label}</div>
       <div style={{ color: accent || "#e6e5e1", fontVariantNumeric: "tabular-nums" }} className="text-base font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function CalendarPicker({ value, onChange }) {
+  const initial = parseDateLocal(value);
+  const [viewYear, setViewYear] = useState(initial.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initial.getMonth());
+
+  const today = todayStr();
+  const now = new Date();
+  const nextDisabled = viewYear === now.getFullYear() && viewMonth === now.getMonth();
+
+  const startWeekday = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  function goPrev() {
+    if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); }
+    else setViewMonth(viewMonth - 1);
+  }
+  function goNext() {
+    if (nextDisabled) return;
+    if (viewMonth === 11) { setViewYear(viewYear + 1); setViewMonth(0); }
+    else setViewMonth(viewMonth + 1);
+  }
+  function cellDateStr(d) {
+    return `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
+  return (
+    <div style={{ background: C.surfaceRaised, border: `1px solid ${C.border}` }} className="rounded-xl p-3">
+      <div className="flex items-center justify-between mb-2">
+        <button type="button" onClick={goPrev} style={{ color: C.text }} className="p-1 hover:opacity-70">
+          <ChevronLeft size={16} />
+        </button>
+        <div style={{ color: C.text }} className="text-sm font-medium capitalize">
+          {MONTH_NAMES[viewMonth]} {viewYear}
+        </div>
+        <button
+          type="button"
+          onClick={goNext}
+          disabled={nextDisabled}
+          style={{ color: nextDisabled ? C.faint : C.text }}
+          className="p-1 hover:opacity-70 disabled:opacity-30"
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {WEEKDAY.map(w => (
+          <div key={w} style={{ color: C.faint }} className="text-[10px] text-center uppercase">{w[0]}</div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const dateStr = cellDateStr(d);
+          const disabled = dateStr > today;
+          const selected = dateStr === value;
+          const isToday = dateStr === today;
+          return (
+            <button
+              type="button"
+              key={i}
+              disabled={disabled}
+              onClick={() => onChange(dateStr)}
+              style={{
+                background: selected ? C.amber : "transparent",
+                color: disabled ? C.faint : selected ? "#241a04" : C.text,
+                border: isToday && !selected ? `1px solid ${C.amber}` : "1px solid transparent",
+              }}
+              className="text-xs rounded-lg py-1.5 disabled:cursor-not-allowed"
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
