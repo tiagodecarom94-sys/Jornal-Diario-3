@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil, Calendar as CalendarIcon, Flame, Target } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 
 // ---- palette ----
@@ -47,8 +47,14 @@ export default function TradingJournal() {
   const [trades, setTrades] = useState([]);
   const [balanceInicial, setBalanceInicial] = useState(1000);
   const [exchangeRate, setExchangeRate] = useState(5.4);
+  const [riscoPercent, setRiscoPercent] = useState(10);
+  const [metaValor, setMetaValor] = useState(5000);
+  const [metaData, setMetaData] = useState(`${new Date().getFullYear()}-12-31`);
   const [editingRate, setEditingRate] = useState(false);
   const [editingInicial, setEditingInicial] = useState(false);
+  const [editingRisco, setEditingRisco] = useState(false);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [showMetaDatePicker, setShowMetaDatePicker] = useState(false);
   const [selectedMonthKey, setSelectedMonthKey] = useState(monthKeyOf(todayStr()));
   const [activeTab, setActiveTab] = useState("mes");
   const [selectedDay, setSelectedDay] = useState(todayStr());
@@ -70,6 +76,9 @@ export default function TradingJournal() {
         const parsed = JSON.parse(s);
         if (parsed.balanceInicial != null) setBalanceInicial(parsed.balanceInicial);
         if (parsed.exchangeRate != null) setExchangeRate(parsed.exchangeRate);
+        if (parsed.riscoPercent != null) setRiscoPercent(parsed.riscoPercent);
+        if (parsed.metaValor != null) setMetaValor(parsed.metaValor);
+        if (parsed.metaData != null) setMetaData(parsed.metaData);
       }
     } catch (e) {}
     setLoaded(true);
@@ -85,6 +94,10 @@ export default function TradingJournal() {
     try {
       localStorage.setItem("fx-journal-settings", JSON.stringify(next));
     } catch (e) { setSaveError(true); }
+  }
+  function saveSettings(overrides) {
+    const next = { balanceInicial, exchangeRate, riscoPercent, metaValor, metaData, ...overrides };
+    persistSettings(next);
   }
 
   const sorted = useMemo(
@@ -214,6 +227,37 @@ export default function TradingJournal() {
     [yearMonthlyData]
   );
 
+  // ---- streak: consecutive trading days with a positive result ----
+  const { currentStreak, bestStreak } = useMemo(() => {
+    const byDate = {};
+    sorted.forEach(t => { byDate[t.date] = (byDate[t.date] || 0) + t.valor; });
+    const days = Object.keys(byDate).sort();
+    let best = 0, running = 0, cur = 0;
+    days.forEach((d, i) => {
+      if (byDate[d] > 0) {
+        running += 1;
+        if (running > best) best = running;
+      } else {
+        running = 0;
+      }
+      if (i === days.length - 1) cur = byDate[d] > 0 ? running : 0;
+    });
+    return { currentStreak: cur, bestStreak: best };
+  }, [sorted]);
+
+  // ---- risk reference for today ----
+  const riscoValor = totalBalance * (riscoPercent / 100);
+
+  // ---- goal progress ----
+  const metaProgressPct = metaValor > 0 ? Math.min(100, Math.max(0, (totalBalance / metaValor) * 100)) : 0;
+  const metaReached = totalBalance >= metaValor && metaValor > 0;
+  const metaDaysRemaining = Math.ceil((parseDateLocal(metaData) - parseDateLocal(todayStr())) / 86400000);
+  const metaDeadlinePassed = metaDaysRemaining <= 0 && !metaReached;
+  const metaAmountRemaining = metaValor - totalBalance;
+  const metaDailyNeeded = (!metaReached && !metaDeadlinePassed && metaDaysRemaining > 0)
+    ? metaAmountRemaining / metaDaysRemaining
+    : 0;
+
   function monthLabel(key) {
     const [y,m] = key.split("-");
     return `${MONTH_NAMES[parseInt(m,10)-1]} ${y}`;
@@ -270,14 +314,16 @@ export default function TradingJournal() {
     { id: "dia", label: "Dia" },
     { id: "mes", label: "Mês" },
     { id: "ano", label: "Ano" },
+    { id: "metas", label: "Metas" },
   ];
 
-  const tabPct = activeTab === "dia" ? dayPct : activeTab === "mes" ? monthPct : yearPct;
-  const tabPnl = activeTab === "dia" ? dayPnl : activeTab === "mes" ? monthPnl : yearPnl;
+  const tabPct = activeTab === "dia" ? dayPct : activeTab === "mes" ? monthPct : activeTab === "ano" ? yearPct : 0;
+  const tabPnl = activeTab === "dia" ? dayPnl : activeTab === "mes" ? monthPnl : activeTab === "ano" ? yearPnl : 0;
   const tabTitle = activeTab === "dia"
     ? (parseDateLocal(selectedDay).getDate() + " de " + MONTH_NAMES[parseDateLocal(selectedDay).getMonth()])
     : activeTab === "mes" ? monthLabel(selectedMonthKey)
-    : selectedYear;
+    : activeTab === "ano" ? selectedYear
+    : "";
 
   const scopeTrades = activeTab === "ano" ? tradesInYear : activeTab === "dia" ? tradesInDay : tradesInMonth;
   const scopeWins = scopeTrades.filter(t => t.valor > 0).length;
@@ -334,7 +380,7 @@ export default function TradingJournal() {
               autoFocus
               type="number"
               defaultValue={balanceInicial}
-              onBlur={(e) => { const v = parseFloat(e.target.value) || 0; setBalanceInicial(v); persistSettings({ balanceInicial: v, exchangeRate }); setEditingInicial(false); }}
+              onBlur={(e) => { const v = parseFloat(e.target.value) || 0; setBalanceInicial(v); saveSettings({ balanceInicial: v }); setEditingInicial(false); }}
               style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text }}
               className="w-24 rounded px-1.5 py-0.5"
             />
@@ -350,13 +396,57 @@ export default function TradingJournal() {
               type="number"
               step="0.01"
               defaultValue={exchangeRate}
-              onBlur={(e) => { const v = parseFloat(e.target.value) || 1; setExchangeRate(v); persistSettings({ balanceInicial, exchangeRate: v }); setEditingRate(false); }}
+              onBlur={(e) => { const v = parseFloat(e.target.value) || 1; setExchangeRate(v); saveSettings({ exchangeRate: v }); setEditingRate(false); }}
               style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text }}
               className="w-20 rounded px-1.5 py-0.5"
             />
           ) : (
             <button onClick={() => setEditingRate(true)} className="flex items-center gap-1 hover:opacity-80">
               câmbio R$ {exchangeRate.toFixed(2)} / US$1 <Pencil size={10} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* streak & risk */}
+      <div className="grid grid-cols-2 gap-2.5 mb-4">
+        <div style={{ background: C.surface, border: `1px solid ${C.border}` }} className="rounded-xl px-3.5 py-3 flex items-center gap-2.5">
+          <div style={{ background: currentStreak > 0 ? C.gainDim : C.surfaceRaised }} className="w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+            <Flame size={16} color={currentStreak > 0 ? C.gain : C.faint} />
+          </div>
+          <div>
+            <div style={{ color: C.faint }} className="text-[10px] uppercase tracking-wide">Streak</div>
+            <div style={{ color: C.text, fontVariantNumeric: "tabular-nums" }} className="text-sm font-semibold">
+              {currentStreak} {currentStreak === 1 ? "dia positivo" : "dias positivos"}
+            </div>
+            {bestStreak > 0 && (
+              <div style={{ color: C.faint }} className="text-[10px]">recorde: {bestStreak} {bestStreak === 1 ? "dia" : "dias"}</div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ background: C.surface, border: `1px solid ${C.border}` }} className="rounded-xl px-3.5 py-3 flex items-center justify-between gap-2">
+          <div>
+            <div style={{ color: C.faint }} className="text-[10px] uppercase tracking-wide">Risco máx. hoje</div>
+            <div style={{ color: C.text, fontVariantNumeric: "tabular-nums" }} className="text-sm font-semibold">{fmtUSD(riscoValor)}</div>
+          </div>
+          {editingRisco ? (
+            <input
+              autoFocus
+              type="number"
+              step="0.5"
+              defaultValue={riscoPercent}
+              onBlur={(e) => { const v = parseFloat(e.target.value) || 0; setRiscoPercent(v); saveSettings({ riscoPercent: v }); setEditingRisco(false); }}
+              style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text }}
+              className="w-14 rounded px-1.5 py-1 text-xs text-right"
+            />
+          ) : (
+            <button
+              onClick={() => setEditingRisco(true)}
+              style={{ color: C.faint }}
+              className="flex items-center gap-1 text-xs shrink-0 hover:opacity-80"
+            >
+              {riscoPercent}% <Pencil size={10} />
             </button>
           )}
         </div>
@@ -434,6 +524,8 @@ export default function TradingJournal() {
         </div>
 
         <div className="p-5">
+          {activeTab !== "metas" && (
+          <>
           {activeTab === "dia" && daysInMonth.length > 0 && (
             <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
               {daysInMonth.map(d => (
@@ -553,6 +645,92 @@ export default function TradingJournal() {
                 </div>
               )}
             </>
+          )}
+          </>
+          )}
+
+          {activeTab === "metas" && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div style={{ color: C.muted }} className="text-xs">Meta de saldo</div>
+                {editingMeta ? (
+                  <input
+                    autoFocus
+                    type="number"
+                    step="1"
+                    defaultValue={metaValor}
+                    onBlur={(e) => { const v = parseFloat(e.target.value) || 0; setMetaValor(v); saveSettings({ metaValor: v }); setEditingMeta(false); }}
+                    style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text }}
+                    className="w-24 rounded px-1.5 py-0.5 text-xs text-right"
+                  />
+                ) : (
+                  <button onClick={() => setEditingMeta(true)} style={{ color: C.faint }} className="flex items-center gap-1 text-xs hover:opacity-80">
+                    {fmtUSD(metaValor)} <Pencil size={10} />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 mb-1">
+                <Target size={18} color={metaReached ? C.gain : C.amber} />
+                <span style={{ color: metaReached ? C.gain : C.text, fontVariantNumeric: "tabular-nums" }} className="text-3xl font-semibold">
+                  {metaProgressPct.toFixed(1)}%
+                </span>
+              </div>
+              <div style={{ color: C.muted }} className="text-sm mb-3">
+                {fmtUSD(totalBalance)} de {fmtUSD(metaValor)}
+              </div>
+
+              <div style={{ background: C.surfaceRaised, border: `1px solid ${C.border}` }} className="w-full h-2.5 rounded-full overflow-hidden mb-4">
+                <div
+                  style={{
+                    width: `${metaProgressPct}%`,
+                    background: metaReached ? C.gain : C.amber,
+                    height: "100%",
+                    transition: "width 0.3s ease",
+                  }}
+                />
+              </div>
+
+              <div style={{ background: C.surfaceRaised, border: `1px solid ${C.border}` }} className="rounded-xl p-3.5 mb-3">
+                {metaReached ? (
+                  <div style={{ color: C.gain }} className="text-sm font-medium">🎉 Meta batida! Bora definir a próxima.</div>
+                ) : metaDeadlinePassed ? (
+                  <div style={{ color: C.loss }} className="text-sm font-medium">O prazo dessa meta já passou — ajuste a data ou o valor.</div>
+                ) : (
+                  <>
+                    <div style={{ color: C.muted }} className="text-xs mb-1">
+                      Faltam {fmtUSD(metaAmountRemaining)} em {metaDaysRemaining} {metaDaysRemaining === 1 ? "dia" : "dias"}
+                    </div>
+                    <div style={{ color: C.amber, fontVariantNumeric: "tabular-nums" }} className="text-lg font-semibold">
+                      {fmtUSD(metaDailyNeeded)} <span style={{ color: C.faint }} className="text-xs font-normal">por dia até a meta</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div style={{ color: C.muted }} className="text-xs mb-1">Data alvo</div>
+              <button
+                type="button"
+                onClick={() => setShowMetaDatePicker(s => !s)}
+                style={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, color: C.text }}
+                className="w-full flex items-center justify-between rounded-lg px-3 py-2 text-sm"
+              >
+                <span className="capitalize">
+                  {parseDateLocal(metaData).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
+                </span>
+                <CalendarIcon size={15} color={C.faint} />
+              </button>
+              {showMetaDatePicker && (
+                <div className="mt-2">
+                  <CalendarPicker
+                    value={metaData}
+                    onChange={(d) => { setMetaData(d); saveSettings({ metaData: d }); setShowMetaDatePicker(false); }}
+                    disableDate={(d) => d < todayStr()}
+                    allowFuture
+                  />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -746,14 +924,15 @@ function StatCard({ label, value, accent }) {
   );
 }
 
-function CalendarPicker({ value, onChange }) {
+function CalendarPicker({ value, onChange, disableDate, allowFuture = false }) {
   const initial = parseDateLocal(value);
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
 
   const today = todayStr();
   const now = new Date();
-  const nextDisabled = viewYear === now.getFullYear() && viewMonth === now.getMonth();
+  const nextDisabled = !allowFuture && viewYear === now.getFullYear() && viewMonth === now.getMonth();
+  const isDateDisabled = disableDate || ((d) => d > today);
 
   const startWeekday = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -802,7 +981,7 @@ function CalendarPicker({ value, onChange }) {
         {cells.map((d, i) => {
           if (d === null) return <div key={i} />;
           const dateStr = cellDateStr(d);
-          const disabled = dateStr > today;
+          const disabled = isDateDisabled(dateStr);
           const selected = dateStr === value;
           const isToday = dateStr === today;
           return (
