@@ -21,6 +21,31 @@ const C = {
 const MONTH_NAMES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const WEEKDAY = ["dom","seg","ter","qua","qui","sex","sáb"];
 
+// deterministic decorative candlestick pattern for the header background
+function seededRandom(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+const HEADER_CANDLES = (() => {
+  const rand = seededRandom(7);
+  return Array.from({ length: 26 }, (_, i) => {
+    const base = 45 + Math.sin(i / 3.2) * 16;
+    const bodyH = 6 + rand() * 20;
+    const up = rand() > 0.42;
+    const top = base - bodyH / 2;
+    const bottom = base + bodyH / 2;
+    return {
+      top, bottom,
+      wickTop: top - rand() * 12,
+      wickBottom: bottom + rand() * 12,
+      up,
+    };
+  });
+})();
+
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -333,18 +358,39 @@ export default function TradingJournal() {
   return (
     <div style={{ background: C.bg, color: C.text, minHeight: "100vh" }} className="font-sans px-4 py-5 sm:px-8 sm:py-6 max-w-2xl lg:max-w-6xl mx-auto">
       {/* header */}
-      <div className="flex items-baseline justify-between mb-5">
-        <div>
-          <div style={{ color: C.faint, letterSpacing: "0.15em" }} className="text-[10px] uppercase font-medium">Diário de Trading · FX</div>
-          <h1 style={{ color: C.text }} className="text-xl font-semibold mt-0.5">Meu Trading</h1>
-        </div>
-        <button
-          onClick={() => { setShowDatePicker(false); setShowForm(true); }}
-          style={{ background: C.gain, color: "#04120c" }}
-          className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg active:opacity-80"
+      <div
+        style={{ background: C.surface, border: `1px solid ${C.border}` }}
+        className="relative overflow-hidden rounded-2xl px-4 py-4 sm:px-5 sm:py-5 mb-5"
+      >
+        <svg
+          viewBox="0 0 640 90"
+          preserveAspectRatio="none"
+          className="absolute inset-0 w-full h-full pointer-events-none"
         >
-          <Plus size={16} /> Operação
-        </button>
+          {HEADER_CANDLES.map((cd, i) => {
+            const x = i * (640 / HEADER_CANDLES.length) + 4;
+            const color = cd.up ? C.gain : C.loss;
+            return (
+              <g key={i} opacity={0.16}>
+                <line x1={x + 4} x2={x + 4} y1={cd.wickTop} y2={cd.wickBottom} stroke={color} strokeWidth="1" />
+                <rect x={x} y={Math.min(cd.top, cd.bottom)} width="8" height={Math.max(2, Math.abs(cd.bottom - cd.top))} fill={color} rx="1" />
+              </g>
+            );
+          })}
+        </svg>
+        <div className="relative flex items-baseline justify-between">
+          <div>
+            <div style={{ color: C.faint, letterSpacing: "0.15em" }} className="text-[10px] uppercase font-medium">Diário de Trading · FX</div>
+            <h1 style={{ color: C.text }} className="text-xl font-semibold mt-0.5">Meu Trading</h1>
+          </div>
+          <button
+            onClick={() => { setShowDatePicker(false); setShowForm(true); }}
+            style={{ background: C.gain, color: "#04120c" }}
+            className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg active:opacity-80"
+          >
+            <Plus size={16} /> Operação
+          </button>
+        </div>
       </div>
 
       <div className="lg:grid lg:grid-cols-[1.5fr_1fr] lg:gap-6 lg:items-start">
