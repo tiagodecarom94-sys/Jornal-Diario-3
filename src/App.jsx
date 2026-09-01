@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil, Calendar as CalendarIcon } from "lucide-react";
-import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from "recharts";
+import { AreaChart, Area, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 
 // ---- palette ----
 const C = {
@@ -100,6 +100,12 @@ export default function TradingJournal() {
     return Array.from(set).sort().reverse();
   }, [sorted, currentMonthKey]);
 
+  const currentYearKey = currentMonthKey.slice(0,4);
+  const yearsAvailable = useMemo(() => {
+    const set = new Set(monthsAvailable.map(m => m.slice(0,4)));
+    return Array.from(set).sort().reverse();
+  }, [monthsAvailable]);
+
   function sumBefore(dateStr) {
     return sorted.filter(t => t.date < dateStr).reduce((s,t) => s + t.valor, 0);
   }
@@ -131,10 +137,6 @@ export default function TradingJournal() {
     () => sorted.filter(t => monthKeyOf(t.date) === selectedMonthKey),
     [sorted, selectedMonthKey]
   );
-  const wins = tradesInMonth.filter(t => t.valor > 0).length;
-  const losses = tradesInMonth.filter(t => t.valor < 0).length;
-  const winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
-
   const daysInMonth = useMemo(() => {
     const set = new Set(tradesInMonth.map(t => t.date));
     return Array.from(set).sort();
@@ -152,6 +154,17 @@ export default function TradingJournal() {
   const balanceStartOfDay = balanceInicial + sumBefore(selectedDay);
   const dayPnl = sumOnDate(selectedDay);
   const dayPct = balanceStartOfDay !== 0 ? (dayPnl / balanceStartOfDay) * 100 : 0;
+  const balanceEndOfDay = balanceStartOfDay + dayPnl;
+  const balanceEndOfYear = balanceStartOfYear + yearPnl;
+
+  const tradesInYear = useMemo(
+    () => sorted.filter(t => yearOf(t.date) === selectedYear),
+    [sorted, selectedYear]
+  );
+  const tradesInDay = useMemo(
+    () => sorted.filter(t => t.date === selectedDay),
+    [sorted, selectedDay]
+  );
 
   // equity curve for the selected month (daily closing balance)
   const curveData = useMemo(() => {
@@ -166,6 +179,41 @@ export default function TradingJournal() {
     return points;
   }, [tradesInMonth, balanceStartOfMonth]);
 
+  // equity curve for the selected day (trade by trade)
+  const dayCurveData = useMemo(() => {
+    const points = [{ label: "início", saldo: balanceStartOfDay }];
+    let running = balanceStartOfDay;
+    tradesInDay.forEach((t, i) => {
+      running += t.valor;
+      points.push({ label: `#${i + 1}`, saldo: Number(running.toFixed(2)) });
+    });
+    return points;
+  }, [tradesInDay, balanceStartOfDay]);
+
+  // per-month breakdown for the selected year (the main chart)
+  const yearMonthlyData = useMemo(() => {
+    const lastMonthIdx = selectedYear === currentYearKey ? parseInt(currentMonthKey.slice(5,7), 10) - 1 : 11;
+    const arr = [];
+    for (let m = 0; m <= lastMonthIdx; m++) {
+      const key = `${selectedYear}-${String(m + 1).padStart(2, "0")}`;
+      const firstDay = `${key}-01`;
+      const startBal = balanceInicial + sumBefore(firstDay);
+      const pnl = sumInMonth(key);
+      const pct = startBal !== 0 ? (pnl / startBal) * 100 : 0;
+      arr.push({ label: MONTH_NAMES[m].slice(0, 3), monthKey: key, pct: Number(pct.toFixed(2)), pnl: Number(pnl.toFixed(2)) });
+    }
+    return arr;
+  }, [selectedYear, sorted, balanceInicial, currentYearKey, currentMonthKey]);
+
+  const bestMonth = useMemo(
+    () => yearMonthlyData.reduce((best, m) => (!best || m.pnl > best.pnl ? m : best), null),
+    [yearMonthlyData]
+  );
+  const worstMonth = useMemo(
+    () => yearMonthlyData.reduce((worst, m) => (!worst || m.pnl < worst.pnl ? m : worst), null),
+    [yearMonthlyData]
+  );
+
   function monthLabel(key) {
     const [y,m] = key.split("-");
     return `${MONTH_NAMES[parseInt(m,10)-1]} ${y}`;
@@ -176,6 +224,15 @@ export default function TradingJournal() {
     const newIdx = idx - dir;
     if (newIdx >= 0 && newIdx < monthsAvailable.length) {
       setSelectedMonthKey(monthsAvailable[newIdx]);
+    }
+  }
+  function shiftYear(dir) {
+    const idx = yearsAvailable.indexOf(selectedYear);
+    const newIdx = idx - dir;
+    if (newIdx >= 0 && newIdx < yearsAvailable.length) {
+      const newYear = yearsAvailable[newIdx];
+      const monthsOfYear = monthsAvailable.filter(m => m.startsWith(newYear)).sort();
+      setSelectedMonthKey(monthsOfYear.length ? monthsOfYear[monthsOfYear.length - 1] : `${newYear}-01`);
     }
   }
 
@@ -222,6 +279,11 @@ export default function TradingJournal() {
     : activeTab === "mes" ? monthLabel(selectedMonthKey)
     : selectedYear;
 
+  const scopeTrades = activeTab === "ano" ? tradesInYear : activeTab === "dia" ? tradesInDay : tradesInMonth;
+  const scopeWins = scopeTrades.filter(t => t.valor > 0).length;
+  const scopeLosses = scopeTrades.filter(t => t.valor < 0).length;
+  const scopeWinRate = (scopeWins + scopeLosses) > 0 ? (scopeWins / (scopeWins + scopeLosses)) * 100 : 0;
+
   return (
     <div style={{ background: C.bg, color: C.text, minHeight: "100vh" }} className="font-sans px-4 py-5 sm:px-8 sm:py-6 max-w-2xl lg:max-w-6xl mx-auto">
       {/* header */}
@@ -244,14 +306,26 @@ export default function TradingJournal() {
       {/* balance card */}
       <div style={{ background: C.surface, border: `1px solid ${C.border}` }} className="rounded-2xl p-5 mb-4">
         <div style={{ color: C.muted }} className="text-xs mb-1">
-          {selectedMonthKey === currentMonthKey ? "Saldo atual" : `Saldo ao fim de ${monthLabel(selectedMonthKey)}`}
+          {activeTab === "dia"
+            ? (selectedDay === todayStr() ? "Saldo atual" : `Saldo ao fim do dia ${parseDateLocal(selectedDay).toLocaleDateString("pt-BR")}`)
+            : activeTab === "ano"
+            ? (selectedYear === currentYearKey ? "Saldo atual" : `Saldo ao fim de ${selectedYear}`)
+            : (selectedMonthKey === currentMonthKey ? "Saldo atual" : `Saldo ao fim de ${monthLabel(selectedMonthKey)}`)}
         </div>
         <div className="flex items-end gap-3 flex-wrap">
           <div style={{ fontVariantNumeric: "tabular-nums" }} className="text-3xl font-semibold">
-            {fmtUSD(selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth)}
+            {fmtUSD(
+              activeTab === "dia" ? (selectedDay === todayStr() ? totalBalance : balanceEndOfDay)
+              : activeTab === "ano" ? (selectedYear === currentYearKey ? totalBalance : balanceEndOfYear)
+              : (selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth)
+            )}
           </div>
           <div style={{ color: C.muted, fontVariantNumeric: "tabular-nums" }} className="text-base pb-0.5">
-            {fmtBRL((selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth) * (exchangeRate || 1))}
+            {fmtBRL((
+              activeTab === "dia" ? (selectedDay === todayStr() ? totalBalance : balanceEndOfDay)
+              : activeTab === "ano" ? (selectedYear === currentYearKey ? totalBalance : balanceEndOfYear)
+              : (selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth)
+            ) * (exchangeRate || 1))}
           </div>
         </div>
         <div className="flex items-center gap-4 mt-3 text-xs" style={{ color: C.faint }}>
@@ -288,32 +362,56 @@ export default function TradingJournal() {
         </div>
       </div>
 
-      {/* month navigator */}
+      {/* period navigator */}
       <div className="flex items-center justify-between mb-4">
-        <button
-          onClick={() => shiftMonth(-1)}
-          disabled={monthsAvailable.indexOf(selectedMonthKey) >= monthsAvailable.length - 1}
-          style={{ color: monthsAvailable.indexOf(selectedMonthKey) >= monthsAvailable.length - 1 ? C.faint : C.text }}
-          className="p-1.5 disabled:opacity-30"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        <div className="text-sm font-medium" style={{ color: C.text }}>{monthLabel(selectedMonthKey)}</div>
-        <button
-          onClick={() => shiftMonth(1)}
-          disabled={monthsAvailable.indexOf(selectedMonthKey) <= 0}
-          style={{ color: monthsAvailable.indexOf(selectedMonthKey) <= 0 ? C.faint : C.text }}
-          className="p-1.5 disabled:opacity-30"
-        >
-          <ChevronRight size={18} />
-        </button>
+        {activeTab === "ano" ? (
+          <>
+            <button
+              onClick={() => shiftYear(-1)}
+              disabled={yearsAvailable.indexOf(selectedYear) >= yearsAvailable.length - 1}
+              style={{ color: yearsAvailable.indexOf(selectedYear) >= yearsAvailable.length - 1 ? C.faint : C.text }}
+              className="p-1.5 disabled:opacity-30"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div className="text-sm font-medium" style={{ color: C.text }}>Ano {selectedYear}</div>
+            <button
+              onClick={() => shiftYear(1)}
+              disabled={yearsAvailable.indexOf(selectedYear) <= 0}
+              style={{ color: yearsAvailable.indexOf(selectedYear) <= 0 ? C.faint : C.text }}
+              className="p-1.5 disabled:opacity-30"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => shiftMonth(-1)}
+              disabled={monthsAvailable.indexOf(selectedMonthKey) >= monthsAvailable.length - 1}
+              style={{ color: monthsAvailable.indexOf(selectedMonthKey) >= monthsAvailable.length - 1 ? C.faint : C.text }}
+              className="p-1.5 disabled:opacity-30"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div className="text-sm font-medium" style={{ color: C.text }}>{monthLabel(selectedMonthKey)}</div>
+            <button
+              onClick={() => shiftMonth(1)}
+              disabled={monthsAvailable.indexOf(selectedMonthKey) <= 0}
+              style={{ color: monthsAvailable.indexOf(selectedMonthKey) <= 0 ? C.faint : C.text }}
+              className="p-1.5 disabled:opacity-30"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* stat grid */}
       <div className="grid grid-cols-3 gap-2.5 mb-5">
-        <StatCard label="Operações" value={tradesInMonth.length} />
-        <StatCard label="Win rate" value={`${winRate.toFixed(1)}%`} accent={winRate >= 50 ? C.gain : C.loss} />
-        <StatCard label="Wins / Losses" value={`${wins} / ${losses}`} />
+        <StatCard label="Operações" value={scopeTrades.length} />
+        <StatCard label="Win rate" value={`${scopeWinRate.toFixed(1)}%`} accent={scopeWinRate >= 50 ? C.gain : C.loss} />
+        <StatCard label="Wins / Losses" value={`${scopeWins} / ${scopeLosses}`} />
       </div>
 
       {/* tabs */}
@@ -366,6 +464,29 @@ export default function TradingJournal() {
             {fmtUSD(tabPnl)} <span style={{ color: C.faint }}>·</span> {fmtBRL(tabPnl * (exchangeRate || 1))}
           </div>
 
+          {activeTab === "dia" && dayCurveData.length > 1 && (
+            <div className="h-24 mt-4 -mx-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dayCurveData}>
+                  <defs>
+                    <linearGradient id="fillDay" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={dayPct >= 0 ? C.gain : C.loss} stopOpacity={0.35} />
+                      <stop offset="100%" stopColor={dayPct >= 0 ? C.gain : C.loss} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <YAxis hide domain={["dataMin", "dataMax"]} />
+                  <Tooltip
+                    contentStyle={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }}
+                    labelStyle={{ color: C.muted }}
+                    itemStyle={{ color: C.text }}
+                    formatter={(v) => [fmtUSD(v), "saldo"]}
+                  />
+                  <Area type="monotone" dataKey="saldo" stroke={dayPct >= 0 ? C.gain : C.loss} strokeWidth={2} fill="url(#fillDay)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           {activeTab === "mes" && curveData.length > 1 && (
             <div className="h-24 mt-4 -mx-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -387,6 +508,51 @@ export default function TradingJournal() {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+          )}
+
+          {activeTab === "ano" && yearMonthlyData.length > 0 && (
+            <>
+              <div className="h-64 mt-5 -mx-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={yearMonthlyData} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: C.faint, fontSize: 11 }}
+                      axisLine={{ stroke: C.border }}
+                      tickLine={false}
+                    />
+                    <YAxis hide />
+                    <Tooltip
+                      cursor={{ fill: C.surfaceRaised }}
+                      contentStyle={{ background: C.surfaceRaised, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }}
+                      labelStyle={{ color: C.text, marginBottom: 4 }}
+                      formatter={(v, name, props) => [`${fmtUSD(props.payload.pnl)} · ${fmtPct(v)}`, "resultado"]}
+                    />
+                    <Bar dataKey="pct" radius={[5, 5, 5, 5]} maxBarSize={34}>
+                      {yearMonthlyData.map((m, i) => (
+                        <Cell key={i} fill={m.pct >= 0 ? C.gain : C.loss} fillOpacity={m.monthKey === selectedMonthKey ? 1 : 0.55} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {(bestMonth || worstMonth) && (
+                <div className="grid grid-cols-2 gap-2.5 mt-4">
+                  <div style={{ background: C.surfaceRaised, border: `1px solid ${C.border}` }} className="rounded-xl px-3 py-2.5">
+                    <div style={{ color: C.faint }} className="text-[10px] uppercase tracking-wide mb-0.5">Melhor mês</div>
+                    <div style={{ color: C.gain, fontVariantNumeric: "tabular-nums" }} className="text-sm font-semibold">
+                      {bestMonth ? `${MONTH_NAMES[parseInt(bestMonth.monthKey.slice(5,7),10)-1]} · ${fmtPct(bestMonth.pct)}` : "—"}
+                    </div>
+                  </div>
+                  <div style={{ background: C.surfaceRaised, border: `1px solid ${C.border}` }} className="rounded-xl px-3 py-2.5">
+                    <div style={{ color: C.faint }} className="text-[10px] uppercase tracking-wide mb-0.5">Pior mês</div>
+                    <div style={{ color: C.loss, fontVariantNumeric: "tabular-nums" }} className="text-sm font-semibold">
+                      {worstMonth ? `${MONTH_NAMES[parseInt(worstMonth.monthKey.slice(5,7),10)-1]} · ${fmtPct(worstMonth.pct)}` : "—"}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
