@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil, Calendar as CalendarIcon, Flame, Target } from "lucide-react";
+import { Plus, Trash2, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, X, Pencil, Calendar as CalendarIcon, Flame, Target, Wallet } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 
 // ---- palette ----
@@ -144,37 +144,42 @@ export default function TradingJournal() {
     return Array.from(set).sort().reverse();
   }, [monthsAvailable]);
 
-  function sumBefore(dateStr) {
-    return sorted.filter(t => t.date < dateStr).reduce((s,t) => s + t.valor, 0);
+  function isSaque(t) { return t.type === "saque"; }
+
+  function sumBefore(dateStr, tradesOnly) {
+    return sorted.filter(t => t.date < dateStr && (!tradesOnly || !isSaque(t))).reduce((s,t) => s + t.valor, 0);
   }
-  function sumOnDate(dateStr) {
-    return sorted.filter(t => t.date === dateStr).reduce((s,t) => s + t.valor, 0);
+  function sumOnDate(dateStr, tradesOnly) {
+    return sorted.filter(t => t.date === dateStr && (!tradesOnly || !isSaque(t))).reduce((s,t) => s + t.valor, 0);
   }
-  function sumInMonth(monthKey) {
-    return sorted.filter(t => monthKeyOf(t.date) === monthKey).reduce((s,t) => s + t.valor, 0);
+  function sumInMonth(monthKey, tradesOnly) {
+    return sorted.filter(t => monthKeyOf(t.date) === monthKey && (!tradesOnly || !isSaque(t))).reduce((s,t) => s + t.valor, 0);
   }
-  function sumInYear(year) {
-    return sorted.filter(t => yearOf(t.date) === year).reduce((s,t) => s + t.valor, 0);
+  function sumInYear(year, tradesOnly) {
+    return sorted.filter(t => yearOf(t.date) === year && (!tradesOnly || !isSaque(t))).reduce((s,t) => s + t.valor, 0);
   }
 
   const totalBalance = balanceInicial + sorted.reduce((s,t) => s + t.valor, 0);
 
   const monthFirstDay = `${selectedMonthKey}-01`;
   const balanceStartOfMonth = balanceInicial + sumBefore(monthFirstDay);
-  const monthPnl = sumInMonth(selectedMonthKey);
-  const balanceEndOfMonth = balanceStartOfMonth + monthPnl;
+  const monthPnlAll = sumInMonth(selectedMonthKey);
+  const monthPnl = sumInMonth(selectedMonthKey, true);
+  const balanceEndOfMonth = balanceStartOfMonth + monthPnlAll;
   const monthPct = balanceStartOfMonth !== 0 ? (monthPnl / balanceStartOfMonth) * 100 : 0;
 
   const selectedYear = selectedMonthKey.slice(0,4);
   const yearFirstDay = `${selectedYear}-01-01`;
   const balanceStartOfYear = balanceInicial + sumBefore(yearFirstDay);
-  const yearPnl = sumInYear(selectedYear);
+  const yearPnlAll = sumInYear(selectedYear);
+  const yearPnl = sumInYear(selectedYear, true);
   const yearPct = balanceStartOfYear !== 0 ? (yearPnl / balanceStartOfYear) * 100 : 0;
 
   const tradesInMonth = useMemo(
     () => sorted.filter(t => monthKeyOf(t.date) === selectedMonthKey),
     [sorted, selectedMonthKey]
   );
+  const perfTradesInMonth = useMemo(() => tradesInMonth.filter(t => !isSaque(t)), [tradesInMonth]);
   const daysInMonth = useMemo(() => {
     const set = new Set(tradesInMonth.map(t => t.date));
     return Array.from(set).sort();
@@ -190,21 +195,24 @@ export default function TradingJournal() {
   }, [selectedMonthKey]);
 
   const balanceStartOfDay = balanceInicial + sumBefore(selectedDay);
-  const dayPnl = sumOnDate(selectedDay);
+  const dayPnlAll = sumOnDate(selectedDay);
+  const dayPnl = sumOnDate(selectedDay, true);
   const dayPct = balanceStartOfDay !== 0 ? (dayPnl / balanceStartOfDay) * 100 : 0;
-  const balanceEndOfDay = balanceStartOfDay + dayPnl;
-  const balanceEndOfYear = balanceStartOfYear + yearPnl;
+  const balanceEndOfDay = balanceStartOfDay + dayPnlAll;
+  const balanceEndOfYear = balanceStartOfYear + yearPnlAll;
 
   const tradesInYear = useMemo(
     () => sorted.filter(t => yearOf(t.date) === selectedYear),
     [sorted, selectedYear]
   );
+  const perfTradesInYear = useMemo(() => tradesInYear.filter(t => !isSaque(t)), [tradesInYear]);
   const tradesInDay = useMemo(
     () => sorted.filter(t => t.date === selectedDay),
     [sorted, selectedDay]
   );
+  const perfTradesInDay = useMemo(() => tradesInDay.filter(t => !isSaque(t)), [tradesInDay]);
 
-  // equity curve for the selected month (daily closing balance)
+  // equity curve for the selected month (daily closing balance) — includes saques, this is the real balance line
   const curveData = useMemo(() => {
     const points = [{ label: "início", saldo: balanceStartOfMonth }];
     let running = balanceStartOfMonth;
@@ -217,7 +225,7 @@ export default function TradingJournal() {
     return points;
   }, [tradesInMonth, balanceStartOfMonth]);
 
-  // equity curve for the selected day (trade by trade)
+  // equity curve for the selected day (trade by trade, includes saques)
   const dayCurveData = useMemo(() => {
     const points = [{ label: "início", saldo: balanceStartOfDay }];
     let running = balanceStartOfDay;
@@ -236,7 +244,7 @@ export default function TradingJournal() {
       const key = `${selectedYear}-${String(m + 1).padStart(2, "0")}`;
       const firstDay = `${key}-01`;
       const startBal = balanceInicial + sumBefore(firstDay);
-      const pnl = sumInMonth(key);
+      const pnl = sumInMonth(key, true);
       const pct = startBal !== 0 ? (pnl / startBal) * 100 : 0;
       arr.push({ label: MONTH_NAMES[m].slice(0, 3), monthKey: key, pct: Number(pct.toFixed(2)), pnl: Number(pnl.toFixed(2)) });
     }
@@ -252,10 +260,10 @@ export default function TradingJournal() {
     [yearMonthlyData]
   );
 
-  // ---- streak: consecutive trading days with a positive result ----
+  // ---- streak: consecutive trading days with a positive result (saques don't count) ----
   const { currentStreak, bestStreak } = useMemo(() => {
     const byDate = {};
-    sorted.forEach(t => { byDate[t.date] = (byDate[t.date] || 0) + t.valor; });
+    sorted.filter(t => !isSaque(t)).forEach(t => { byDate[t.date] = (byDate[t.date] || 0) + t.valor; });
     const days = Object.keys(byDate).sort();
     let best = 0, running = 0, cur = 0;
     days.forEach((d, i) => {
@@ -310,7 +318,8 @@ export default function TradingJournal() {
     const raw = parseFloat(String(form.valor).replace(",", "."));
     if (!raw || raw <= 0 || !form.date) return;
     const valor = form.tipo === "ganho" ? raw : -raw;
-    const next = [...trades, { id: Date.now(), date: form.date, valor }];
+    const type = form.tipo === "saque" ? "saque" : "trade";
+    const next = [...trades, { id: Date.now(), date: form.date, valor, type }];
     persistTrades(next);
     if (!monthsAvailable.includes(monthKeyOf(form.date))) {
       setSelectedMonthKey(monthKeyOf(form.date));
@@ -350,7 +359,7 @@ export default function TradingJournal() {
     : activeTab === "ano" ? selectedYear
     : "";
 
-  const scopeTrades = activeTab === "ano" ? tradesInYear : activeTab === "dia" ? tradesInDay : tradesInMonth;
+  const scopeTrades = activeTab === "ano" ? perfTradesInYear : activeTab === "dia" ? perfTradesInDay : perfTradesInMonth;
   const scopeWins = scopeTrades.filter(t => t.valor > 0).length;
   const scopeLosses = scopeTrades.filter(t => t.valor < 0).length;
   const scopeWinRate = (scopeWins + scopeLosses) > 0 ? (scopeWins / (scopeWins + scopeLosses)) * 100 : 0;
@@ -806,11 +815,19 @@ export default function TradingJournal() {
         {[...tradesInMonth].reverse().map(t => (
           <div key={t.id} style={{ background: C.surface, border: `1px solid ${C.border}` }} className="flex items-center justify-between rounded-xl px-3.5 py-2.5">
             <div className="flex items-center gap-3">
-              <div style={{ background: t.valor >= 0 ? C.gainDim : C.lossDim }} className="w-7 h-7 rounded-full flex items-center justify-center shrink-0">
-                {t.valor >= 0 ? <TrendingUp size={14} color={C.gain} /> : <TrendingDown size={14} color={C.loss} />}
+              <div
+                style={{ background: t.type === "saque" ? "#3a2f14" : (t.valor >= 0 ? C.gainDim : C.lossDim) }}
+                className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+              >
+                {t.type === "saque"
+                  ? <Wallet size={13} color={C.amber} />
+                  : (t.valor >= 0 ? <TrendingUp size={14} color={C.gain} /> : <TrendingDown size={14} color={C.loss} />)}
               </div>
               <div>
                 <div style={{ color: C.text }} className="text-sm">{parseDateLocal(t.date).toLocaleDateString("pt-BR")}</div>
+                {t.type === "saque" && (
+                  <div style={{ color: C.amber }} className="text-[11px]">Saque</div>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -873,7 +890,7 @@ export default function TradingJournal() {
               </div>
             )}
 
-            <label style={{ color: C.muted }} className="text-xs block mb-1">Resultado</label>
+            <label style={{ color: C.muted }} className="text-xs block mb-1">Tipo</label>
             <div className="flex gap-2 mb-3">
               <button
                 type="button"
@@ -899,7 +916,24 @@ export default function TradingJournal() {
               >
                 Perda
               </button>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, tipo: "saque" })}
+                style={{
+                  background: form.tipo === "saque" ? C.amber : C.surfaceRaised,
+                  color: form.tipo === "saque" ? "#241a04" : C.muted,
+                  border: `1px solid ${form.tipo === "saque" ? C.amber : C.border}`,
+                }}
+                className="flex-1 rounded-lg py-2 text-sm font-medium"
+              >
+                Saque
+              </button>
             </div>
+            {form.tipo === "saque" && (
+              <div style={{ color: C.faint }} className="text-[11px] -mt-1.5 mb-3">
+                O valor é debitado do saldo total e não conta como operação no win rate ou streak.
+              </div>
+            )}
 
             <label style={{ color: C.muted }} className="text-xs block mb-1">Valor (US$)</label>
             <input
