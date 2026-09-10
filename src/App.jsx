@@ -1012,7 +1012,12 @@ function CalendarPicker({ value, onChange, disableDate, allowFuture = false }) {
   const today = todayStr();
   const now = new Date();
   const nextDisabled = !allowFuture && viewYear === now.getFullYear() && viewMonth === now.getMonth();
-  const isDateDisabled = disableDate || ((d) => d > today);
+  const baseDisable = disableDate || ((d) => d > today);
+  function isWeekend(dateStr) {
+    const wd = parseDateLocal(dateStr).getDay();
+    return wd === 0 || wd === 6;
+  }
+  const isDateDisabled = (d) => baseDisable(d) || isWeekend(d);
 
   const startWeekday = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
