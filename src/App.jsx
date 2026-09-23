@@ -415,18 +415,18 @@ export default function TradingJournal() {
         </div>
         <div className="flex items-end gap-3 flex-wrap">
           <div style={{ fontVariantNumeric: "tabular-nums" }} className="text-3xl font-semibold">
-            {fmtUSD(
-              activeTab === "dia" ? (selectedDay === todayStr() ? totalBalance : balanceEndOfDay)
-              : activeTab === "ano" ? (selectedYear === currentYearKey ? totalBalance : balanceEndOfYear)
-              : (selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth)
-            )}
-          </div>
-          <div style={{ color: C.muted, fontVariantNumeric: "tabular-nums" }} className="text-base pb-0.5">
             {fmtBRL((
               activeTab === "dia" ? (selectedDay === todayStr() ? totalBalance : balanceEndOfDay)
               : activeTab === "ano" ? (selectedYear === currentYearKey ? totalBalance : balanceEndOfYear)
               : (selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth)
             ) * (exchangeRate || 1))}
+          </div>
+          <div style={{ color: C.muted, fontVariantNumeric: "tabular-nums" }} className="text-base pb-0.5">
+            {fmtUSD(
+              activeTab === "dia" ? (selectedDay === todayStr() ? totalBalance : balanceEndOfDay)
+              : activeTab === "ano" ? (selectedYear === currentYearKey ? totalBalance : balanceEndOfYear)
+              : (selectedMonthKey === currentMonthKey ? totalBalance : balanceEndOfMonth)
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4 mt-3 text-xs" style={{ color: C.faint }}>
@@ -1012,12 +1012,7 @@ function CalendarPicker({ value, onChange, disableDate, allowFuture = false }) {
   const today = todayStr();
   const now = new Date();
   const nextDisabled = !allowFuture && viewYear === now.getFullYear() && viewMonth === now.getMonth();
-  const baseDisable = disableDate || ((d) => d > today);
-  function isWeekend(dateStr) {
-    const wd = parseDateLocal(dateStr).getDay();
-    return wd === 0 || wd === 6;
-  }
-  const isDateDisabled = (d) => baseDisable(d) || isWeekend(d);
+  const isDateDisabled = disableDate || ((d) => d > today);
 
   const startWeekday = new Date(viewYear, viewMonth, 1).getDay();
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
